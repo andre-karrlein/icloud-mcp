@@ -183,10 +183,7 @@ async function handleRequest(request) {
 }
 
 /**
- * Start the MCP server
- */
-/**
- * Start the MCP server (stdio for local + HTTP for Railway/Grok)
+ * Start the MCP server (HTTP for Railway + stdio fallback)
  */
 function startServer() {
   console.error('[icloud-mcp] Starting iCloud MCP server...');
@@ -204,12 +201,11 @@ function startServer() {
     console.error('[icloud-mcp] TEST MODE ENABLED');
   }
 
-  // === HTTP SERVER FOR RAILWAY + GROK REMOTE MCP ===
+  // === HTTP SERVER FOR RAILWAY / GROK (must stay alive) ===
   const http = require('http');
   const PORT = process.env.PORT || 8080;
 
   const httpServer = http.createServer(async (req, res) => {
-    // Health check endpoint
     if (req.method === 'GET' && req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
@@ -222,7 +218,6 @@ function startServer() {
       return;
     }
 
-    // MCP JSON-RPC endpoint (Grok expects this)
     if (req.method === 'POST' && (req.url === '/mcp' || req.url === '/')) {
       let body = '';
       req.on('data', chunk => { body += chunk; });
@@ -238,61 +233,30 @@ function startServer() {
             res.writeHead(204).end();
           }
         } catch (e) {
-          console.error('[icloud-mcp] HTTP parse error:', e.message);
+          console.error('[icloud-mcp] HTTP error:', e.message);
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32700, message: 'Parse error' }
-          }));
+          res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } }));
         }
       });
       return;
     }
 
-    // Not found
     res.writeHead(404).end();
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.error(`🚀 iCloud MCP HTTP server listening on port ${PORT}`);
-    console.error(`   → Use this URL in Grok: https://your-service.up.railway.app/mcp`);
+    console.error(`🚀 iCloud MCP HTTP server listening on http://0.0.0.0:${PORT}`);
+    console.error(`   → Health: https://your-url.up.railway.app/`);
+    console.error(`   → Grok: https://your-url.up.railway.app/mcp`);
   });
 
-  // === Keep original stdio transport for local use ===
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: false
-  });
+  // === Prevent immediate shutdown ===
+  console.error('[icloud-mcp] HTTP server started - keeping process alive for Railway');
 
-  let buffer = '';
+  // Keep the process alive (important for containers)
+  process.stdin.resume();
 
-  rl.on('line', async (line) => {
-    buffer += line;
-
-    try {
-      const request = JSON.parse(buffer);
-      buffer = '';
-
-      const response = await handleRequest(request);
-
-      if (response) {
-        const responseStr = JSON.stringify(response);
-        process.stdout.write(responseStr + '\n');
-      }
-    } catch (e) {
-      if (!(e instanceof SyntaxError)) {
-        console.error('[icloud-mcp] Parse error:', e.message);
-        buffer = '';
-      }
-    }
-  });
-
-  rl.on('close', () => {
-    console.error('[icloud-mcp] Server shutting down');
-    process.exit(0);
-  });
-
+  // Graceful shutdown only on real signals
   process.on('SIGINT', () => {
     console.error('[icloud-mcp] Received SIGINT, shutting down');
     process.exit(0);
@@ -303,6 +267,9 @@ function startServer() {
     process.exit(0);
   });
 }
+
+// Start the server
+startServer();
 
 // Start the server
 startServer();
