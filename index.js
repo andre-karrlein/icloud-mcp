@@ -183,7 +183,7 @@ async function handleRequest(request) {
 }
 
 /**
- * Start the MCP server (HTTP for Railway + stdio fallback)
+ * Start the MCP server - Railway optimized
  */
 function startServer() {
   console.error('[icloud-mcp] Starting iCloud MCP server...');
@@ -201,11 +201,12 @@ function startServer() {
     console.error('[icloud-mcp] TEST MODE ENABLED');
   }
 
-  // === HTTP SERVER FOR RAILWAY / GROK (must stay alive) ===
+  // === HTTP SERVER FOR RAILWAY + GROK ===
   const http = require('http');
   const PORT = process.env.PORT || 8080;
 
   const httpServer = http.createServer(async (req, res) => {
+    // Health check
     if (req.method === 'GET' && req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
@@ -218,6 +219,7 @@ function startServer() {
       return;
     }
 
+    // MCP endpoint for Grok
     if (req.method === 'POST' && (req.url === '/mcp' || req.url === '/')) {
       let body = '';
       req.on('data', chunk => { body += chunk; });
@@ -246,27 +248,29 @@ function startServer() {
 
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.error(`🚀 iCloud MCP HTTP server listening on http://0.0.0.0:${PORT}`);
-    console.error(`   → Health: https://your-url.up.railway.app/`);
-    console.error(`   → Grok: https://your-url.up.railway.app/mcp`);
+    console.error(`   → Health check: https://your-url.up.railway.app/`);
+    console.error(`   → Grok MCP URL: https://your-url.up.railway.app/mcp`);
   });
 
-  // === Prevent immediate shutdown ===
-  console.error('[icloud-mcp] HTTP server started - keeping process alive for Railway');
-
-  // Keep the process alive (important for containers)
+  // Keep process alive on Railway (critical)
   process.stdin.resume();
 
-  // Graceful shutdown only on real signals
+  // Only shutdown on real termination signals
   process.on('SIGINT', () => {
     console.error('[icloud-mcp] Received SIGINT, shutting down');
-    process.exit(0);
+    httpServer.close(() => process.exit(0));
   });
 
   process.on('SIGTERM', () => {
     console.error('[icloud-mcp] Received SIGTERM, shutting down');
-    process.exit(0);
+    httpServer.close(() => process.exit(0));
   });
+
+  console.error('[icloud-mcp] Server ready and kept alive for Railway');
 }
+
+// Start the server
+startServer();
 
 // Start the server
 startServer();
