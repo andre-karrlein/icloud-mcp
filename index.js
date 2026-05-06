@@ -19,8 +19,7 @@ const scalekit = new Scalekit(
   process.env.SCALEKIT_CLIENT_ID,
   process.env.SCALEKIT_CLIENT_SECRET
 );
-
-const RESOURCE_ID = process.env.RESOURCE_ID || 'https://your-mcp.up.railway.app';
+const RESOURCE_ID = process.env.RESOURCE_ID;   // e.g. https://icloud-mcp-production-a6d4.up.railway.app
 const METADATA_ENDPOINT = `${RESOURCE_ID}/.well-known/oauth-protected-resource`;
 
 const WWW_AUTH = {
@@ -135,7 +134,7 @@ function startServer() {
   const PORT = process.env.PORT || 8080;
 
   const httpServer = http.createServer(async (req, res) => {
-    // Health check (public)
+    // Health check
     if (req.method === 'GET' && req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
@@ -148,7 +147,7 @@ function startServer() {
       return;
     }
 
-    // OAuth Protected Resource Metadata (required by MCP)
+    // === Protected Resource Metadata (critical for OAuth) ===
     if (req.method === 'GET' && req.url === '/.well-known/oauth-protected-resource') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
@@ -162,13 +161,12 @@ function startServer() {
       return;
     }
 
-    // === MCP endpoint with auth ===
-    if (req.method === 'POST' && (req.url === '/mcp' || req.url === '/')) {
+    // === Main MCP endpoint (support both / and /mcp) ===
+    if (req.method === 'POST' && (req.url === '/' || req.url === '/mcp')) {
       let body = '';
       req.on('data', chunk => { body += chunk; });
       req.on('end', async () => {
         try {
-          // === AUTH CHECK (NEW) ===
           await authenticateRequest(req);
 
           const requestJson = JSON.parse(body);
@@ -190,13 +188,17 @@ function startServer() {
           
           res.end(JSON.stringify({
             jsonrpc: '2.0',
-            error: { 
-              code: -32000, 
-              message: 'Unauthorized'
-            }
+            error: { code: -32000, message: 'Unauthorized' }
           }));
         }
       });
+      return;
+    }
+
+    // Graceful handling for GET probes
+    if (req.method === 'GET' && (req.url === '/' || req.url === '/mcp')) {
+      res.writeHead(405, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Use POST for MCP requests' }));
       return;
     }
 
@@ -204,11 +206,12 @@ function startServer() {
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.error(`🚀 iCloud MCP + ScaleKit OAuth listening on http://0.0.0.0:${PORT}`);
+    console.error(`🚀 iCloud MCP + ScaleKit OAuth listening on port ${PORT}`);
+    console.error(`   → Resource: ${RESOURCE_ID}`);
     console.error(`   → Metadata: ${RESOURCE_ID}/.well-known/oauth-protected-resource`);
   });
 
-  // ... your existing graceful shutdown code stays the same
+  // Your existing graceful shutdown code...
   process.stdin.resume();
   process.on('SIGINT', () => { /* ... */ });
   process.on('SIGTERM', () => { /* ... */ });
