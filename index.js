@@ -183,7 +183,7 @@ async function handleRequest(request) {
 }
 
 /**
- * Start the MCP server - Railway optimized
+ * Start the MCP server - Optimized for Railway
  */
 function startServer() {
   console.error('[icloud-mcp] Starting iCloud MCP server...');
@@ -219,7 +219,7 @@ function startServer() {
       return;
     }
 
-    // MCP endpoint for Grok
+    // MCP endpoint
     if (req.method === 'POST' && (req.url === '/mcp' || req.url === '/')) {
       let body = '';
       req.on('data', chunk => { body += chunk; });
@@ -249,13 +249,13 @@ function startServer() {
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.error(`🚀 iCloud MCP HTTP server listening on http://0.0.0.0:${PORT}`);
     console.error(`   → Health check: https://your-url.up.railway.app/`);
-    console.error(`   → Grok MCP URL: https://your-url.up.railway.app/mcp`);
+    console.error(`   → Grok MCP: https://your-url.up.railway.app/mcp`);
   });
 
-  // Keep process alive on Railway (critical)
+  // Keep the process alive on Railway
   process.stdin.resume();
 
-  // Only shutdown on real termination signals
+  // Graceful shutdown
   process.on('SIGINT', () => {
     console.error('[icloud-mcp] Received SIGINT, shutting down');
     httpServer.close(() => process.exit(0));
@@ -266,14 +266,8 @@ function startServer() {
     httpServer.close(() => process.exit(0));
   });
 
-  console.error('[icloud-mcp] Server ready and kept alive for Railway');
+  console.error('[icloud-mcp] Server is ready and kept alive ✅');
 }
 
-// Start the server
-startServer();
-
-// Start the server
-startServer();
-
-// Start the server
+// Start the server **only once**
 startServer();
