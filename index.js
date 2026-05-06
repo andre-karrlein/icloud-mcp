@@ -69,27 +69,31 @@ const SERVER_INFO = {
 
 /** ScaleKit Auth Helper (NEW) */
 async function authenticateRequest(req) {
-  // Skip auth for discovery & health
-  if (req.url.includes('.well-known') || req.url === '/') {
+  // Always skip these
+  if (req.url.includes('.well-known') || 
+      req.url === '/' || 
+      req.method === 'GET') {
     return true;
   }
 
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.split('Bearer ')[1]?.trim()
+  const token = authHeader?.startsWith('Bearer ') 
+    ? authHeader.split('Bearer ')[1]?.trim() 
     : null;
 
   if (!token) {
     throw new Error('Missing Bearer token');
   }
 
-  // Validate with ScaleKit
-  await scalekit.validateToken(token, {
-    audience: [RESOURCE_ID]
-    // issuer is auto-validated by the SDK
-  });
-
-  return true;
+  try {
+    await scalekit.validateToken(token, {
+      audience: [RESOURCE_ID]
+    });
+    return true;
+  } catch (err) {
+    console.error('Token validation failed:', err.message);
+    throw new Error('Invalid token');
+  }
 }
 
 /**
@@ -178,13 +182,18 @@ function startServer() {
           }
         } catch (e) {
           console.error('[icloud-mcp] Auth or request error:', e.message);
+          
           res.writeHead(401, {
             'Content-Type': 'application/json',
-            [WWW_AUTH.key]: WWW_AUTH.value
+            'WWW-Authenticate': `Bearer realm="MCP Server", resource_metadata="${METADATA_ENDPOINT}"`
           });
+          
           res.end(JSON.stringify({
             jsonrpc: '2.0',
-            error: { code: -32000, message: 'Unauthorized: ' + e.message }
+            error: { 
+              code: -32000, 
+              message: 'Unauthorized'
+            }
           }));
         }
       });
