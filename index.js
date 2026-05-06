@@ -202,76 +202,99 @@ function startServer() {
   const PORT = process.env.PORT || 8080;
 
   const httpServer = http.createServer(async (req, res) => {
-    // === OAuth Discovery Endpoints (required by Grok) ===
-    if (req.method === 'GET') {
-      if (req.url === '/.well-known/oauth-protected-resource') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          resource: `https://${req.headers.host}`,
-          authorization_servers: [`https://${req.headers.host}`],
-          scopes_supported: ["tools:read", "tools:write"],
-          bearer_methods_supported: ["header"]
-        }));
-        return;
-      }
+  const host = req.headers.host || 'localhost';
 
-      if (req.url === '/.well-known/oauth-authorization-server') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          issuer: `https://${req.headers.host}`,
-          authorization_endpoint: `https://${req.headers.host}/authorize`,
-          token_endpoint: `https://${req.headers.host}/token`,
-          registration_endpoint: `https://${req.headers.host}/register`,
-          response_types_supported: ["code"],
-          grant_types_supported: ["authorization_code", "client_credentials"],
-          token_endpoint_auth_methods_supported: ["client_secret_basic"]
-        }));
-        return;
-      }
-
-      // Health check
-      if (req.url === '/') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          status: 'ok',
-          name: SERVER_INFO.name,
-          version: SERVER_INFO.version,
-          mode: MODE,
-          tools: TOOLS.length
-        }));
-        return;
-      }
-    }
-
-    // === Main MCP endpoint ===
-    if (req.method === 'POST' && (req.url === '/mcp' || req.url === '/')) {
-      let body = '';
-      req.on('data', chunk => { body += chunk; });
-      req.on('end', async () => {
-        try {
-          const request = JSON.parse(body);
-          const response = await handleRequest(request);
-
-          if (response) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(response));
-          } else {
-            res.writeHead(204).end();
-          }
-        } catch (e) {
-          console.error('[icloud-mcp] HTTP error:', e.message);
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            jsonrpc: '2.0', 
-            error: { code: -32700, message: 'Parse error' } 
-          }));
-        }
-      });
+  // === OAuth Discovery (required by Grok) ===
+  if (req.method === 'GET') {
+    if (req.url === '/.well-known/oauth-protected-resource') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        resource: `https://${host}`,
+        authorization_servers: [`https://${host}`],
+        scopes_supported: ["mcp:tools"],
+        bearer_methods_supported: ["header"]
+      }));
       return;
     }
 
-    res.writeHead(404).end();
-  });
+    if (req.url === '/.well-known/oauth-authorization-server') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        issuer: `https://${host}`,
+        authorization_endpoint: `https://${host}/authorize`,
+        token_endpoint: `https://${host}/token`,
+        registration_endpoint: `https://${host}/register`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["client_credentials", "authorization_code"],
+        token_endpoint_auth_methods_supported: ["none", "client_secret_basic"]
+      }));
+      return;
+    }
+
+    // Health check
+    if (req.url === '/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        name: SERVER_INFO.name,
+        version: SERVER_INFO.version,
+        mode: MODE,
+        tools: TOOLS.length
+      }));
+      return;
+    }
+  }
+
+  // === Dummy registration & token endpoints (static response) ===
+  if (req.method === 'POST') {
+    if (req.url === '/register') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        client_id: "grok-static-client",
+        client_secret: "dummy-secret-not-used",
+        client_id_issued_at: Math.floor(Date.now() / 1000)
+      }));
+      return;
+    }
+
+    if (req.url === '/token') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        access_token: "dummy-token-" + Date.now(),
+        token_type: "Bearer",
+        expires_in: 3600,
+        scope: "mcp:tools"
+      }));
+      return;
+    }
+  }
+
+  // === Main MCP endpoint ===
+  if (req.method === 'POST' && (req.url === '/mcp' || req.url === '/')) {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const request = JSON.parse(body);
+        const response = await handleRequest(request);
+
+        if (response) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(response));
+        } else {
+          res.writeHead(204).end();
+        }
+      } catch (e) {
+        console.error('[icloud-mcp] HTTP error:', e.message);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } }));
+      }
+    });
+    return;
+  }
+
+  res.writeHead(404).end();
+});
 
   httpServer.listen(PORT, '0.0.0.0', () => {
     console.error(`🚀 iCloud MCP HTTP server listening on http://0.0.0.0:${PORT}`);
