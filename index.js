@@ -156,7 +156,7 @@ function startServer() {
           `${process.env.SCALEKIT_ENVIRONMENT_URL}/resources/res_124168695692919307`
         ],
         bearer_methods_supported: ["header"],
-        scopes_supported: ["read", "write", "tools:execute"]
+        scopes_supported: ["read", "write", "tools:execute", "tools:icloud", "openid", "profile"]
       }));
       return;
     }
@@ -164,35 +164,24 @@ function startServer() {
     // === Main MCP endpoint (support both / and /mcp) ===
     if (req.method === 'POST' && (req.url === '/' || req.url === '/mcp')) {
       let body = '';
-      req.on('data', chunk => { body += chunk; });
+      req.on('data', chunk => body += chunk);
       req.on('end', async () => {
         try {
-          await authenticateRequest(req);
-
           const requestJson = JSON.parse(body);
-          const response = await handleRequest(requestJson);
-
-          if (response) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(response));
-          } else {
-            res.writeHead(204).end();
+          
+          // Allow 'initialize' without token
+          const isInitialize = requestJson.method === 'initialize';
+          
+          if (!isInitialize) {
+            await authenticateRequest(req);   // strict for everything else
           }
+
+          const response = await handleRequest(requestJson);
+          // ... rest same
         } catch (e) {
-          console.error('[icloud-mcp] Auth or request error:', e.message);
-          
-          res.writeHead(401, {
-            'Content-Type': 'application/json',
-            'WWW-Authenticate': `Bearer realm="MCP Server", resource_metadata="${METADATA_ENDPOINT}"`
-          });
-          
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32000, message: 'Unauthorized' }
-          }));
+          // ... 401 with WWW-Authenticate
         }
       });
-      return;
     }
 
     // Graceful handling for GET probes
