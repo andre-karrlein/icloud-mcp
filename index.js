@@ -150,10 +150,10 @@ function startServer() {
       res.end(JSON.stringify({
         resource: RESOURCE_ID,
         authorization_servers: [
-          `${process.env.SCALEKIT_ENVIRONMENT_URL}/resources/${/* your MCP Server ID from dashboard */}`
+          `${process.env.SCALEKIT_ENVIRONMENT_URL}/resources/res_124168695692919307`
         ],
         bearer_methods_supported: ["header"],
-        scopes_supported: ["read", "write", "tools:execute"]   // adjust to what you set in ScaleKit
+        scopes_supported: ["read", "write", "tools:execute"]
       }));
       return;
     }
