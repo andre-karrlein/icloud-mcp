@@ -185,6 +185,9 @@ async function handleRequest(request) {
 /**
  * Start the MCP server
  */
+/**
+ * Start the MCP server (stdio for local + HTTP for Railway/Grok)
+ */
 function startServer() {
   console.error('[icloud-mcp] Starting iCloud MCP server...');
   console.error(`[icloud-mcp] Mode: ${MODE}`);
@@ -201,6 +204,61 @@ function startServer() {
     console.error('[icloud-mcp] TEST MODE ENABLED');
   }
 
+  // === HTTP SERVER FOR RAILWAY + GROK REMOTE MCP ===
+  const http = require('http');
+  const PORT = process.env.PORT || 8080;
+
+  const httpServer = http.createServer(async (req, res) => {
+    // Health check endpoint
+    if (req.method === 'GET' && req.url === '/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        name: SERVER_INFO.name,
+        version: SERVER_INFO.version,
+        mode: MODE,
+        tools: TOOLS.length
+      }));
+      return;
+    }
+
+    // MCP JSON-RPC endpoint (Grok expects this)
+    if (req.method === 'POST' && (req.url === '/mcp' || req.url === '/')) {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const request = JSON.parse(body);
+          const response = await handleRequest(request);
+
+          if (response) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(response));
+          } else {
+            res.writeHead(204).end();
+          }
+        } catch (e) {
+          console.error('[icloud-mcp] HTTP parse error:', e.message);
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32700, message: 'Parse error' }
+          }));
+        }
+      });
+      return;
+    }
+
+    // Not found
+    res.writeHead(404).end();
+  });
+
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.error(`🚀 iCloud MCP HTTP server listening on port ${PORT}`);
+    console.error(`   → Use this URL in Grok: https://your-service.up.railway.app/mcp`);
+  });
+
+  // === Keep original stdio transport for local use ===
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -223,7 +281,6 @@ function startServer() {
         process.stdout.write(responseStr + '\n');
       }
     } catch (e) {
-      // Not a complete JSON yet, continue buffering
       if (!(e instanceof SyntaxError)) {
         console.error('[icloud-mcp] Parse error:', e.message);
         buffer = '';
