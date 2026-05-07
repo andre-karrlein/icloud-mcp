@@ -104,21 +104,74 @@ async function handleRequest(request) {
   try {
     switch (method) {
       case 'initialize':
-        return { /* ... same as before */ };
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            protocolVersion: '2024-11-05',
+            serverInfo: SERVER_INFO,
+            capabilities: {
+              tools: {}
+            }
+          }
+        };
       case 'notifications/initialized':
         return null;
       case 'tools/list':
-        return { /* ... same */ };
+        return {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            tools: TOOLS.map(tool => ({
+              name: tool.name,
+              description: tool.description,
+              inputSchema: tool.inputSchema
+            }))
+          }
+        };
       case 'tools/call':
-        // ... same
+        const toolName = params?.name;
+        const toolArgs = params?.arguments || {};
+
+        const tool = TOOLS.find(t => t.name === toolName);
+        if (!tool) {
+          return {
+            jsonrpc: '2.0',
+            id,
+            error: {
+              code: -32601,
+              message: `Unknown tool: ${toolName}`
+            }
+          };
+        }
+
+        console.error(`[icloud-mcp] Calling tool: ${toolName}`);
         const result = await tool.handler(toolArgs);
-        return { /* ... */ };
+        return {
+          jsonrpc: '2.0',
+          id,
+          result
+        };
       default:
-        return { /* ... */ };
+        return {
+          jsonrpc: '2.0',
+          id,
+          error: {
+            code: -32601,
+            message: `Unknown method: ${method}`
+          }
+        };
     }
   } catch (error) {
-    console.error(`[icloud-mcp] Error:`, error.message);
-    return { /* error */ };
+    console.error(`[icloud-mcp] Error handling ${method}:`, error.message);
+    return {
+      jsonrpc: '2.0',
+      id,
+      error: {
+        code: -32603,
+        message: error.message
+      }
+    };
   }
 }
 
