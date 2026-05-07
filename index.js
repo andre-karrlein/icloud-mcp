@@ -217,42 +217,44 @@ function startServer() {
     // === Main MCP endpoint (support both / and /mcp) ===
     // Inside the http.createServer
     if (req.method === 'POST' && (req.url === '/' || req.url === '/mcp')) {
-      let body = '';
-      req.on('data', chunk => { body += chunk; });
-      req.on('end', async () => {
-        try {
-          const requestJson = JSON.parse(body);
-          const isInitialize = requestJson.method === 'initialize';
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const requestJson = JSON.parse(body);
+        const method = requestJson.method;
 
-          // Allow initialize + tools/list without strict token on first contact
-          if (!isInitialize && requestJson.method !== 'tools/list') {
-            await authenticateRequest(req);   // strict only for tool calls
-          }
+        // === GROK-FRIENDLY: Allow discovery methods without token ===
+        const isDiscovery = ['initialize', 'tools/list', 'ping'].includes(method);
 
-          const response = await handleRequest(requestJson);
-
-          if (response) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(response));
-          } else {
-            res.writeHead(204).end();
-          }
-        } catch (e) {
-          console.error('[icloud-mcp] Auth or request error:', e.message);
-          
-          res.writeHead(401, {
-            'Content-Type': 'application/json',
-            'WWW-Authenticate': `Bearer realm="MCP Server", resource_metadata="${METADATA_ENDPOINT}"`
-          });
-          
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32000, message: 'Unauthorized' }
-          }));
+        if (!isDiscovery) {
+          await authenticateRequest(req);   // strict auth for actual tool calls
         }
-      });
-      return;
-    }
+
+        const response = await handleRequest(requestJson);
+
+        if (response) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(response));
+        } else {
+          res.writeHead(204).end();
+        }
+      } catch (e) {
+        console.error('[icloud-mcp] Auth or request error:', e.message);
+        
+        res.writeHead(401, {
+          'Content-Type': 'application/json',
+          'WWW-Authenticate': `Bearer realm="MCP Server", resource_metadata="${METADATA_ENDPOINT}"`
+        });
+        
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          error: { code: -32000, message: 'Unauthorized' }
+        }));
+      }
+    });
+    return;
+  }
 
     // Graceful handling for GET probes
     if (req.method === 'GET' && (req.url === '/' || req.url === '/mcp')) {
